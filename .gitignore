@@ -1,6 +1,7 @@
 # Node.js
 node_modules/
 dist/
+build/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -14,6 +15,9 @@ __pycache__/
 venv/
 ENV/
 env/
+.env
+.env.*
+*.spec
 
 # Databases
 backend/buildwise.db
@@ -21,6 +25,7 @@ backend/test.db
 backend/test_report.db
 *.db
 *.sqlite3
+backend/app/static/uploads/*
 
 # OS files
 .DS_Store

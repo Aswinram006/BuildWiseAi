@@ -25,7 +25,7 @@ if %errorlevel% neq 0 (
 echo.
 echo [3/3] Launching BuildWise AI Web App...
 echo.
-echo >>> Connect to: http://127.0.0.1:8000
+echo === Connect to: http://127.0.0.1:8000 ===
 echo.
 python -m uvicorn app.main:app --port 8000
 pause

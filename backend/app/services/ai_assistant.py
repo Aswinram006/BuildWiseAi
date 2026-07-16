@@ -4,9 +4,89 @@ from typing import List, Dict, Any
 from app.models.project import Project, Task, Equipment, Milestone
 from app.models.budget import Budget
 from app.models.inventory import Inventory, Material
+import os
+import requests
+import json
 
 class AIAssistantService:
     def answer_query(self, project_id: int, message: str, db: Session) -> str:
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            return self._answer_query_mock(project_id, message, db)
+
+        # Fetch project details
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            return "Project not found in system."
+
+        context = self._build_project_context(project, db)
+        return self._call_gemini_api(api_key, context, message)
+
+    def _build_project_context(self, project: Project, db: Session) -> str:
+        tasks = db.query(Task).filter(Task.project_id == project.id).all()
+        milestones = db.query(Milestone).filter(Milestone.project_id == project.id).all()
+        equipment = db.query(Equipment).filter(Equipment.project_id == project.id).all()
+        inventory = db.query(Inventory).filter(Inventory.project_id == project.id).all()
+        budgets = db.query(Budget).filter(Budget.project_id == project.id).all()
+
+        context = f"Project: {project.name}\n"
+        context += f"Status: {project.status}\n"
+        context += f"Budget: ${project.budget:,.2f}\n"
+        context += f"Duration: {project.start_date} to {project.end_date}\n\n"
+
+        context += "--- Milestones ---\n"
+        for m in milestones:
+            context += f"- {m.name}: Status={m.status}, Due={m.due_date}\n"
+
+        context += "\n--- Active/Pending Tasks ---\n"
+        for t in tasks:
+            assignee = t.assignee.full_name if t.assignee else "Unassigned"
+            context += f"- {t.name}: Status={t.status}, End={t.end_date}, AssignedTo={assignee}\n"
+
+        context += "\n--- Material Inventory ---\n"
+        for item in inventory:
+            mat = item.material
+            context += f"- {mat.name}: Qty={item.quantity_available} {mat.unit}, MinRequired={item.min_required} {mat.unit}\n"
+
+        context += "\n--- Machinery & Equipment ---\n"
+        for eq in equipment:
+            context += f"- {eq.name} ({eq.type}): Status={eq.status}, Cost=${eq.daily_rate}/day\n"
+
+        context += "\n--- Budget Allocations ---\n"
+        for b in budgets:
+            context += f"- {b.category.capitalize()}: Allocated=${b.allocated:,.2f}, Spent=${b.spent:,.2f}\n"
+
+        return context
+
+    def _call_gemini_api(self, api_key: str, context: str, message: str) -> str:
+        # Use Gemini 2.5 Flash from Google AI Studio
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+        
+        prompt = (
+            "You are an enterprise-grade AI Construction Intelligence Assistant for BuildWise AI.\n"
+            "Below is the live database context for the active project. Answer the user's question "
+            "concisely and professionally using this context. Provide structural advice, identify risks, "
+            "or suggest optimizations as requested. Use Markdown in your response.\n\n"
+            f"--- Live Project Context ---\n{context}\n\n"
+            f"User Question: {message}"
+        )
+        
+        headers = {"Content-Type": "application/json"}
+        payload = {
+            "contents": [{
+                "parts": [{"text": prompt}]
+            }]
+        }
+        
+        try:
+            response = requests.post(url, headers=headers, json=payload, timeout=15)
+            response.raise_for_status()
+            data = response.json()
+            return data["candidates"][0]["content"]["parts"][0]["text"]
+        except Exception as e:
+            return f"Error communicating with Google AI Studio Gemini API: {str(e)}"
+
+    def _answer_query_mock(self, project_id: int, message: str, db: Session) -> str:
         msg = message.lower()
         
         # Fetch project details
